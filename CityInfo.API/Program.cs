@@ -8,7 +8,9 @@ namespace CityInfo.API {
             // Add services to the container.
             builder.Services.AddControllers(options => {
                 options.ReturnHttpNotAcceptable = true;
-            }).AddXmlDataContractSerializerFormatters();
+            })
+                .AddNewtonsoftJson()
+                .AddXmlDataContractSerializerFormatters();
 
             // Injecting Swagger
             builder.Services.AddEndpointsApiExplorer();
