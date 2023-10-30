@@ -1,12 +1,28 @@
 ﻿using CityInfo.API.Models;
+using CityInfo.API.Services;
 using Microsoft.AspNetCore.JsonPatch;
 using Microsoft.AspNetCore.Mvc;
+using System.Net.Mail;
 
 namespace CityInfo.API.Controllers {
 
     [ApiController]
     [Route("api/cities/{cityId}/poi")]
     public class PoiController : ControllerBase {
+
+
+        private readonly ILogger<PoiController> _logger;
+        private readonly IMailService _mailService;
+        private readonly DataStore _dataStore;
+
+
+        // Constructor injection (prefferred way)
+        public PoiController(ILogger<PoiController> logger, IMailService mailService, DataStore dataStore) {
+            // Checking for null exception 
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _mailService = mailService ?? throw new ArgumentNullException(nameof(mailService));
+            _dataStore = dataStore ?? throw new ArgumentNullException(nameof(dataStore));
+        }
 
 
         /*
@@ -20,14 +36,31 @@ namespace CityInfo.API.Controllers {
         [HttpGet]
         public ActionResult<IEnumerable<PointOfInterest>> GetAllPoi(int cityId) {
 
-            // Checking if city exists
-            var city = DataStore.Current.Cities.FirstOrDefault(c => c.Id == cityId);
-            if (city == null) {
-                return NotFound();
+            // Logging exception
+            try {
+
+                // Throwing exception for testing
+                //throw new Exception("Testing");
+
+                // Checking if city exists
+                var city = _dataStore.Cities.FirstOrDefault(c => c.Id == cityId);
+                if (city == null) {
+                    _logger.LogInformation($"City with id {cityId} wasn't found when accessing points of interest.");
+                    return NotFound();
+                }
+
+
+                return Ok(city.PointsOfInterest);
             }
+            catch (Exception ex) {
+                // Unhandled exceptions automatically return error 500
+                // but since we are handling the exception we need to return it manually
 
+                _logger.LogCritical($"Exception while getting points of interest for city with id {cityId}", ex);
 
-            return Ok(city.PointOfInterests);
+                // This will go back to consumer (but dont send back trace message, or expose implementation)
+                return StatusCode(500, "A problem happened while handling your request");
+            }
         }
 
 
@@ -35,12 +68,12 @@ namespace CityInfo.API.Controllers {
         [HttpGet("{poiId}", Name = "GetPointOfInterest")]
         public ActionResult<IEnumerable<PointOfInterest>> GetPoi(int cityId, int poiId) {
             // Checking if city exists
-            var city = DataStore.Current.Cities.FirstOrDefault(c => c.Id == cityId);
+            var city = _dataStore.Cities.FirstOrDefault(c => c.Id == cityId);
             if (city == null) {
                 return NotFound();
             }
 
-            var poi = city.PointOfInterests.FirstOrDefault(p => p.Id == poiId);
+            var poi = city.PointsOfInterest.FirstOrDefault(p => p.Id == poiId);
             if (poi == null) {
                 return NotFound();
             }
@@ -57,13 +90,13 @@ namespace CityInfo.API.Controllers {
 
 
             // Checking if city exists
-            var city = DataStore.Current.Cities.FirstOrDefault(c => c.Id == cityId);
+            var city = _dataStore.Cities.FirstOrDefault(c => c.Id == cityId);
             if (city == null) {
                 return NotFound();
             }
 
             // Demo purposes
-            var maxPoiId = DataStore.Current.Cities.SelectMany(c => c.PointOfInterests).Max(p => p.Id);
+            var maxPoiId = _dataStore.Cities.SelectMany(c => c.PointsOfInterest).Max(p => p.Id);
 
             var newPoi = new PointOfInterest {
                 Id = maxPoiId + 1,
@@ -73,7 +106,7 @@ namespace CityInfo.API.Controllers {
             };
 
             // Adding to list of Point Of Interests
-            city.PointOfInterests.Add(newPoi);
+            city.PointsOfInterest.Add(newPoi);
 
             // Returning 201 - with reference to get method and its paramaters - and newly created poi
             return CreatedAtRoute("GetPointOfInterest", new { cityId = cityId, poiId = newPoi.Id }, newPoi);
@@ -85,13 +118,13 @@ namespace CityInfo.API.Controllers {
         public ActionResult UpdatePointOfInterest(int cityId, int poiId, PointOfInterestForUpdate poi) {
 
             // Checking if city exists
-            var city = DataStore.Current.Cities.FirstOrDefault(c => c.Id == cityId);
+            var city = _dataStore.Cities.FirstOrDefault(c => c.Id == cityId);
             if (city == null) {
                 return NotFound();
             }
 
             // Checking if poi exists
-            var poiExisting = city.PointOfInterests.FirstOrDefault(c => c.Id == poiId);
+            var poiExisting = city.PointsOfInterest.FirstOrDefault(c => c.Id == poiId);
             if (poiExisting == null) {
                 return NotFound();
             }
@@ -107,13 +140,13 @@ namespace CityInfo.API.Controllers {
         [HttpPatch("{poiId}")]
         public ActionResult UpdatePointOfInterestPartially(int cityId, int poiId, JsonPatchDocument<PointOfInterestForUpdate> patchDocument) {
             // Check if city exists
-            var city = DataStore.Current.Cities.FirstOrDefault(c => c.Id == cityId);
+            var city = _dataStore.Cities.FirstOrDefault(c => c.Id == cityId);
             if (city == null) {
                 return NotFound();
             }
 
             // Checking if poi exists
-            var poiExisting = city.PointOfInterests.FirstOrDefault(c => c.Id == poiId);
+            var poiExisting = city.PointsOfInterest.FirstOrDefault(c => c.Id == poiId);
             if (poiExisting == null) {
                 return NotFound();
             }
@@ -148,22 +181,28 @@ namespace CityInfo.API.Controllers {
         [HttpDelete("{poiId}")]
         public ActionResult DeletePointOfInterest(int cityId, int poiId) {
             // Check if city exists
-            var city = DataStore.Current.Cities.FirstOrDefault(c => c.Id == cityId);
+            var city = _dataStore.Cities.FirstOrDefault(c => c.Id == cityId);
             if (city == null) {
                 return NotFound();
             }
 
             // Checking if poi exists
-            var poiExisting = city.PointOfInterests.FirstOrDefault(c => c.Id == poiId);
+            var poiExisting = city.PointsOfInterest.FirstOrDefault(c => c.Id == poiId);
             if (poiExisting == null) {
                 return NotFound();
             }
 
-            city.PointOfInterests.Remove(poiExisting);
+            city.PointsOfInterest.Remove(poiExisting);
+
+            // Using custom service here
+            _mailService.Send("Point of interest deleted", $"Point of interest {poiExisting.Name} with id {poiId} has been deleted ");
+
 
             var response = new {
                 Message = "Point of Interest deleted successfully."
             };
+
+
 
             return Ok(response);
 
