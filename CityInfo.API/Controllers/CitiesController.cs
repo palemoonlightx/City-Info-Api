@@ -12,14 +12,26 @@ namespace CityInfo.API.Controllers {
         private readonly ICityInfoRepository _cityInfoRepository;
         private readonly IMapper _mapper;
 
+        const int maxCitiesPageSize = 20;
+
         public CitiesController(ICityInfoRepository cityInfoRepository, IMapper mapper) {
             _cityInfoRepository = cityInfoRepository ?? throw new ArgumentNullException(nameof(cityInfoRepository));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<CityWithoutPoi>>> GetCites() {
-            var cityEntites = await _cityInfoRepository.GetCitiesAsync();
+        public async Task<ActionResult<IEnumerable<CityWithoutPoi>>> GetCites(
+                [FromQuery] string? name,
+                [FromQuery] string? searchQuery,
+                [FromQuery] int pageNumber = 1,
+                [FromQuery] int pageSize = 10) {
+
+            if (pageSize > maxCitiesPageSize) {
+                pageSize = maxCitiesPageSize;
+            }
+
+
+            var cityEntites = await _cityInfoRepository.GetCitiesAsync(name, searchQuery, pageNumber, pageSize);
 
 
             // Manuall mapping (problematic)
